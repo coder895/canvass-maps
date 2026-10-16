@@ -9,7 +9,7 @@ Where this repo stands, and the steps left to turn it into the Surrey-Guildford 
 - **Reading the Full exports: done.** Both maps recognise them (`sniff()` → `'full'`, `parseFull()`, `fromFull()` and `residentList()` in `core.js`), load them in the browser and from the built-in data, and the poll map's "Save for the team" carries them. Tested end to end with synthetic files in the same 24-column format: password screen, supporters by house and poll, 2024 lists, focus ranking, routes, the Voted tab matching a participation report by voter number, and house popups listing who lives there.
 - **Sealing tool: done.** `tools/seal.js` writes `data/campaign.enc.js` (PBKDF2-SHA256, 600,000 iterations; gzip then AES-256-GCM) and `--check` opens it again.
 - `data/campaign.enc.js` is still the empty stub: the real exports haven't been sealed yet.
-- GitHub Pages is on (main, root) and still serves the old Surrey City Centre build until the next push.
+- **Published:** GitHub Pages serves this build at https://coder895.github.io/canvass-maps/ (deploys from `main`, root). With no data built in, it opens without a password, and anyone on the team can load the two Full exports in their own browser; the files never leave the device.
 
 ## The data
 
@@ -29,7 +29,7 @@ Only these columns are kept, in the encrypted file and in the file saved for the
 1. **Check against the real files.** Load both into `index.html` (served locally, e.g. `python3 -m http.server`) and check: the address check in Households (how many placed, outside, not found), that polls 1–63 line up with the map, and that `Addr 1` parses for every row. The synthetic test can't show how the real addresses and phone numbers are written.
 2. **Seal them:** `CAMPAIGN_PASSWORD='…' node tools/seal.js Full-2024-10-15-4.xlsx Full-2026-10-15-5.xlsx`, then `node tools/seal.js --check`. Use a strong generated password and share it with the team outside GitHub.
 3. **Voter ID:** once the first Elections BC participation report arrives, load it and check that our supporters match (the Voted tab's "of our supporters have voted"). If almost none match, `Voter ID` isn't the report's card number.
-4. **Publish:** commit and push to `main`; Pages redeploys on its own.
+4. **Publish the sealed data:** commit `data/campaign.enc.js` and push to `main`; Pages redeploys on its own, and the maps then ask for the password.
 
 ### Optional: check-in desk and sign-in log
 
