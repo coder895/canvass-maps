@@ -374,14 +374,14 @@
   }
   async function loadFiles(files) {
     const errors = [];
-    let cast = false, other = false;
+    let cast = false, other = false, current = false;
     for (const f of files) {
       try {
         const rows = await readWorkbook(f);
         const [kind, head] = sniff(rows);
         if (kind === 'cast') { S.cast = mergeCast(S.cast, parseCast(rows, head, f)); castSave(S.cast); cast = true; continue; }
         other = true;
-        if (kind === 'full') { const x = parseFull(rows, head, f); S.full = { ...S.full, [x.past ? 'past' : 'now']: x }; applyFull(); }
+        if (kind === 'full') { const x = parseFull(rows, head, f); S.full = { ...S.full, [x.past ? 'past' : 'now']: x }; applyFull(); current ||= !x.past; }
         else if (kind === 'ps') S.ps = parsePollSummary(rows, head, f);
         else if (kind === 'ix') S.ix = parseInteractions(rows, head, f);
         else if (kind === 'list') { const l = parseList(rows, head, f, listKind(f.name)); S.lists = { ...S.lists, [l.kind]: l }; }
@@ -395,6 +395,7 @@
     $('loadError').textContent = errors.join(' ');
     if (other) S.builtIn = false;  // a participation report adds to the team's data rather than replacing it
     if (cast) { S.shade = 'cast'; S.view = 'cast'; }
+    else if (current) S.shade = 'support';  // this election's supporters on the polls
     afterLoad();
     if (S.sites.length && !S.ps) selectTab('homes');
   }
@@ -438,7 +439,7 @@
     for (const src of d.full || []) { const x = fullFromRows(src); S.full[x.past ? 'past' : 'now'] = x; }
     if (d.full) applyFull();
     S.cast = castSaved();  // a participation report loaded on either map earlier in this tab
-    if (S.cast) S.shade = 'cast';
+    S.shade = S.cast ? 'cast' : S.ps ? 'support' : 'result';  // this election's supporters on the polls
     S.builtIn = true;
     afterLoad();
   }

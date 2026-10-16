@@ -340,6 +340,8 @@
     { k: 'ratio', label: 'Now compared with 2024', sub: 'Supporters now as a share of 2024', color: 'ramp-find', breaks: [0.25, 0.5, 0.75, 1], alpha: ALPHA5,
       get: r => both(r) && r.y24 >= 10 ? r.now / r.y24 : null, edges: pctEdges, needs: () => !!(S.ps && S.t),
       note: 'Darker is closer to (or past) the 2024 count. Uncoloured polls had fewer than 10 supporters on the 2024 lists.' },
+    { k: 'not', label: 'Didn’t vote in 2024', sub: 'Supporters who didn’t vote in 2024', color: 'ramp-gotv', breaks: [10, 25, 50, 75, 100], alpha: ALPHA6,
+      get: r => S.t ? r.not : null, edges: countEdges, needs: () => !!S.t, note: 'Our supporters, on the 2024 list or found this election, who didn’t vote in 2024. Darker means more to get out.' },
     { k: 'focus', label: 'Focus score', sub: 'Where door knocking can add the most votes', color: 'sign', breaks: [25, 50, 100, 150, 200], alpha: ALPHA6,
       get: r => S.focus.get(r.key)?.score ?? null, edges: countEdges, needs: () => S.focus.size > 0,
       note: 'Supporters who didn’t vote in 2024, plus half the supporters found now. The Focus tab ranks the polls.' },
