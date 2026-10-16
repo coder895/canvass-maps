@@ -340,7 +340,7 @@ function renderBoard() {
       Print the matching packets from the same route book.</p>
       <textarea id="bookPaste" aria-label="Route book text"></textarea>
       <div class="row" style="margin-top:10px"><button class="btn primary" type="button" id="bookLoad">Load route book</button><span class="note" id="bookMsg">${esc(S.bookMsg || '')}</span></div>
-      ${S.meta ? `<p class="note" style="margin-top:8px">Loaded now: built ${esc(S.meta.built)} from the Poll Summary of ${esc(S.meta.pollSummary || 'unknown date')}, ${S.meta.count} routes of up to ${S.meta.perRoute} doors${S.meta.maxWalkKm ? ` and ${S.meta.maxWalkKm} km` : ''}, knocking ${esc(S.meta.knock)}.</p>` : ''}
+      ${S.meta ? `<p class="note" style="margin-top:8px">Loaded now: built ${esc(S.meta.built)} from the supporter data of ${esc(S.meta.pollSummary || 'unknown date')}, ${S.meta.count} routes of up to ${S.meta.perRoute} doors${S.meta.maxWalkKm ? ` and ${S.meta.maxWalkKm} km` : ''}, knocking ${esc(S.meta.knock)}.</p>` : ''}
     </details>`;
   h += `<p class="note">Every laptop that opens this page shares this board, and changes show up on the others within a second or two.</p>`;
   b.innerHTML = h;

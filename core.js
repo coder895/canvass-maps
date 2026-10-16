@@ -133,6 +133,7 @@ window.SCC = (() => {
   function sniff(rows) {
     for (let i = 0; i < Math.min(rows.length, 120); i++) {
       const r = rows[i] || [];
+      if (FULL_NEED.every(h => r.some(v => cell(v) === h))) return ['full', i];
       if (r.some(v => cell(v) === 'Household address') && r.some(v => cell(v) === 'Calling list')) return ['calls', i];
       if (r.some(v => cell(v) === 'Door-knocked address')) return ['knocked', i];
       if (cell(r[0]) === 'Poll' && r.some(v => cell(v) === 'Reg Voters')) return ['ps', i];
@@ -335,6 +336,113 @@ window.SCC = (() => {
       .map(r => [cardKey(r[id]), cell(r[ad]).replace(/\s+/g, ' '), ln < 0 ? '' : cell(r[ln]), fn < 0 ? '' : cell(r[fn])]);
     if (!out.length) throw new Error(`${file.name} has no voter numbers in it.`);
     return voterNosFromRows({ name: file.name, rows: out });
+  }
+  // the "Full" supporter exports: one row per supporter, with name, phones, address, poll, whether they voted in 2024 and their voter
+  // number. The year in the file name tells the two apart: Full-2024-… is the 2024 supporter list, a later year is the supporters
+  // identified this election. Only the columns the maps use are kept (tools/seal.js keeps the same ones for the built-in data).
+  const FULL_NEED = ['ID', 'First Name', 'Last Name', 'Support', 'Addr 1', 'Poll', 'Has Voted 2024', 'Voter ID'];
+  const FULL_KEEP = [...FULL_NEED, 'Support Updated', 'Home Tel', 'Cell Tel'];
+  const fullYear = name => +((/(?:^|\D)(20\d\d)(?=\D|$)/.exec(name) || [])[1] || 0);
+  // Addr 1 comes as " - 11058 147A St " (no unit) or "1203 - 13450 104 Ave" (unit first): listAddress() reads the second
+  const fullStreet = v => cell(v).replace(/\s+/g, ' ').replace(/^-\s*/, '').trim();
+  function phoneText(v) {
+    const raw = cell(v), d = raw.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    if (!d || /^null$/i.test(raw)) return '';
+    return d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : raw;
+  }
+  function parseFull(rows, head, file) {
+    const H = rows[head].map(cell), keep = FULL_KEEP.filter(n => H.includes(n)), id = H.indexOf('ID');
+    const body = rows.slice(head + 1).filter(r => r && cell(r[id])).map(r => keep.map(n => r[H.indexOf(n)] ?? null));
+    if (!body.length) throw new Error(`${file.name} has no supporters in it.`);
+    return fullFromRows({ name: file.name, rows: [keep, ...body] });
+  }
+  function fullFromRows(src) {
+    const [H, ...body] = src.rows, col = n => H.indexOf(n), get = (r, n) => col(n) < 0 ? '' : cell(r[col(n)]);
+    const year = fullYear(src.name);
+    const people = body.map(r => {
+      const voted = get(r, 'Has Voted 2024');
+      return { id: get(r, 'ID'), first: get(r, 'First Name'), last: get(r, 'Last Name'), support: get(r, 'Support'), updated: isoDate(r[col('Support Updated')]),
+        phones: [...new Set([get(r, 'Cell Tel'), get(r, 'Home Tel')].map(phoneText).filter(Boolean))], street: fullStreet(r[col('Addr 1')]), poll: pollKey(r[col('Poll')]),
+        voted24: /^(y|true$|1$)/i.test(voted) ? true : /^(n|false$|0$)/i.test(voted) ? false : null, card: cardKey(r[col('Voter ID')]) };
+    });
+    return { name: src.name, year, past: year > 0 && year <= 2024, asOf: (/(\d{4}-\d{2}-\d{2})/.exec(src.name) || [])[1] || '', src, people };
+  }
+  const regOf = key => P.registered[key] ?? P.registered[key.padStart(4, '0')] ?? 0;  // site-based polls are "064S" in the public data
+  // What the maps make of the two exports. The 2024 file gives the 2024 voted and didn't-vote lists; the current one gives the
+  // supporters found this election by house (in the shape parseInteractions() returns) and by poll (in place of a Poll Summary,
+  // which also had the share with no answer yet: that stays null). Both give the voters file and who lives at each house.
+  function fromFull(past, now) {
+    const out = {};
+    if (past) {
+      const list = kind => ({ kind, name: past.name, people: past.people.filter(x => x.voted24 === (kind === 'voted'))
+        .map(x => ({ poll: x.poll, street: x.street, phone: x.phones.length > 0, reg: null })) });
+      out.lists = { voted: list('voted'), not: list('not') };
+    }
+    if (now) {
+      const sites = new Map(), by = new Map();
+      let latest = '', earliest = '';
+      for (const x of now.people) {
+        const cat = CATEGORY[x.support], a = listAddress(x.street);
+        if (x.updated > latest) latest = x.updated;
+        if (x.updated && (!earliest || x.updated < earliest)) earliest = x.updated;
+        const b = by.get(x.poll) || { support: 0, phones: 0, homes: new Set(), streets: new Map() };
+        by.set(x.poll, b);
+        if (cat === 'con' || cat === 'lean') { b.support++; if (x.phones.length) b.phones++; }
+        if (!a) continue;
+        const k = siteKey(a.civic);
+        b.homes.add(k);
+        const st = prettyCivic(a.civic).replace(/^\d+\s+/, '');
+        b.streets.set(st, (b.streets.get(st) || 0) + 1);
+        let s = sites.get(k);
+        if (!s) sites.set(k, s = { key: k, civic: prettyCivic(a.civic), polls: {}, n: {}, units: new Map(), ls: 0, last: '' });
+        if (!NO_POLL.has(x.poll)) s.polls[x.poll] = (s.polls[x.poll] || 0) + 1;
+        if (!s.units.has(a.unit)) s.units.set(a.unit, {});
+        if (cat) { s.n[cat] = (s.n[cat] || 0) + 1; s.units.get(a.unit)[cat] = (s.units.get(a.unit)[cat] || 0) + 1; }
+        if (x.updated > s.last) s.last = x.updated;
+      }
+      out.ix = { name: now.name, full: true, count: now.people.length, latest, earliest, voters: now.people.length, seeds: [...sites.values()].filter(s => Object.keys(s.n).length) };
+      const rows = new Map();
+      for (const key of new Set([...polls.map(p => p.key), ...by.keys()])) {
+        const b = by.get(key), reg = regOf(key), support = b?.support || 0;
+        rows.set(key, { key, reg, hh: b?.homes.size || 0, supHh: b?.homes.size || 0, phones: b?.phones || 0, unknown: null, support, supportPct: reg ? support / reg : 0,
+          streets: [...(b?.streets || [])].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0], 'en', { numeric: true })).map(([name, n]) => ({ name, n })),
+          pop: reg, onMap: pollByKey.has(key) });
+      }
+      const all = [...rows.values()], sum = k => all.reduce((t, r) => t + r[k], 0);
+      out.ps = { name: now.name, full: true, rows, asOf: now.asOf,
+        totals: { reg: all.filter(r => r.reg > 0).reduce((t, r) => t + r.reg, 0), hh: sum('hh'), phones: sum('phones'), support: sum('support'), pop: sum('pop'), noAnswer: null, unknown: null } };
+    }
+    // one entry per person (by ID), the current export's details first
+    const byId = new Map();
+    for (const f of [past, now]) for (const x of f?.people || []) {
+      const was = byId.get(x.id);
+      byId.set(x.id, { ...was, ...x, phones: x.phones.length ? x.phones : was?.phones || [], card: x.card || was?.card || '',
+        on24: !!was?.on24 || f === past, voted24: f === past ? x.voted24 : was?.voted24 ?? null, now: f === now ? x.support : '' });
+    }
+    const people = [...byId.values()];
+    const cards = people.filter(x => x.card && x.street);
+    if (cards.length) out.voterNos = { name: [past?.name, now?.name].filter(Boolean).join(' + '), src: null, at: new Map(cards.map(x => [x.card, x.street])),
+      people: cards.map(x => [x.card, x.street, x.last, x.first]) };
+    out.people = new Map();
+    for (const x of people) {
+      const a = listAddress(x.street);
+      if (!a) continue;
+      const k = siteKey(a.civic);
+      (out.people.get(k) || out.people.set(k, []).get(k)).push({ name: [x.first, x.last].filter(Boolean).join(' '), last: x.last, unit: a.unit, phones: x.phones,
+        now: x.now, on24: x.on24, voted24: x.voted24 });
+    }
+    for (const list of out.people.values()) list.sort((a, b) => a.unit.localeCompare(b.unit, 'en', { numeric: true }) || a.last.localeCompare(b.last) || a.name.localeCompare(b.name));
+    return out;
+  }
+  // who lives at a house, for the house popups on both maps: name, unit, phone, support this election, 2024 vote
+  function residentList(list) {
+    if (!list?.length) return '';
+    const MAX = 30, tel = p => `<a href="tel:${esc(p.replace(/\D/g, ''))}">${esc(p)}</a>`;
+    const tag = x => [x.now ? esc(x.now === 'Conservative-Leaning' ? 'Leaning' : x.now === 'Conservative' ? 'Supporter' : x.now) : x.on24 ? '2024 list only' : '',
+      x.voted24 === true ? 'voted ’24' : x.voted24 === false ? 'didn’t vote ’24' : ''].filter(Boolean).join(' · ');
+    return `<ul class="people">${list.slice(0, MAX).map(x => `<li><span><b>${esc(x.name)}</b>${x.unit ? ` <span class="unit">#${esc(x.unit)}</span>` : ''}
+      <small>${tag(x)}</small></span>${x.phones.length ? `<span class="tel">${x.phones.map(tel).join('<br>')}</span>` : ''}</li>`).join('')}</ul>
+      ${list.length > MAX ? `<p class="meta">+${list.length - MAX} more people here</p>` : ''}`;
   }
   // everyone in the participation report, placed where we'd look for them: a card number on the voters file is one of ours, at
   // the address our lists have; anyone else at the address the report gives (a new or changed registration), or only by poll
@@ -656,5 +764,5 @@ window.SCC = (() => {
     CATEGORY, cell, isoDate, sniff, pollKey, parsePollSummary, parseInteractions, listAddress, parseList, listKind, NO_POLL, listFromRows, readWorkbook,
     T1_ON, t1FromRows, parseT1, CALL_FLAGS, callsFromRows, parseCalls, knockedFromRows, parseKnocked,
     stamp, parseCast, mergeCast, voterNosFromRows, parseVoterNos, castPeople, castSave, castSaved, whoVoted, voteTab,
-    ENC, gate, sealExtra, baseMap, placer, sheet };
+    parseFull, fullFromRows, fromFull, residentList, ENC, gate, sealExtra, baseMap, placer, sheet };
 })();

@@ -1,0 +1,4 @@
+# The campaign exports and participation reports hold personal data: never commit them. Only data/*.enc.js goes in.
+*.xlsx
+*.xls
+*.csv

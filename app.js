@@ -4,11 +4,13 @@
 (() => {
   const { P, $, fmt, pct, esc, day, reduced, phone, vaName, tok, lean, leanText, chip, RESULT_STEPS, RESULT_LABELS, classOf, sumWays, total, places, runs, polls, pollByKey, partyBars,
     siteKey, prettyCivic, locate, inside, listAddress, sniff, pollKey, parsePollSummary, parseInteractions, parseList, listKind, NO_POLL, listFromRows, readWorkbook,
-    stamp, parseCast, mergeCast, voterNosFromRows, parseVoterNos, castPeople, castSave, castSaved, voteTab, ENC, gate, baseMap, placer, sheet } = SCC;
+    stamp, parseCast, mergeCast, voterNosFromRows, parseVoterNos, castPeople, castSave, castSaved, voteTab, parseFull, fullFromRows, fromFull, residentList,
+    ENC, gate, baseMap, placer, sheet } = SCC;
   const app = $('app');
 
   // ------------------------------------------------------------------ state
-  const S = { ps: null, ix: null, turnout: null, cast: null, voterNos: null, castBy: null, sites: [], view: 'support', shade: 'result', sel: null, sort: null };
+  const S = { ps: null, ix: null, turnout: null, cast: null, voterNos: null, castBy: null, full: { past: null, now: null }, people: null, sites: [], view: 'support',
+    shade: 'result', sel: null, sort: null };
   const voted = voteTab($('pane-voted'), () => ({ vn: S.voterNos, cast: S.cast, polls: pollRows().map(r => ({ key: r.key, label: r.label, reg: r.reg })) }),
     x => showHouse(S.sites.find(s => s.key === x.home.key)), key => goPoll(key));
 
@@ -30,14 +32,15 @@
   const SHADES = [
     { k: 'result', label: '2024 result' },
     { k: 'support', label: 'Supporters found', needs: 'ps' },
-    { k: 'unknown', label: 'No answer yet', needs: 'ps' },
+    { k: 'unknown', label: 'No answer yet', needs: 'unknown' },
     { k: 'skipped', label: 'Didn’t vote in 2024', needs: 'lists' },
     { k: 'cast', label: 'Voted so far', needs: 'cast' },
   ];
   const ALPHA5 = [0.08, 0.2, 0.34, 0.5, 0.66];
   const STEPS = {
     support: { color: 'con', breaks: [0.02, 0.05, 0.10, 0.20, 0.35], alpha: [0.06, 0.16, 0.28, 0.42, 0.56, 0.70], get: r => r.supportPct, label: v => pct(v),
-      title: 'Supporters found, as a share of people on file', note: 'From the Poll Summary.' },
+      title: () => S.ps?.full ? 'Supporters found, as a share of registered voters' : 'Supporters found, as a share of people on file',
+      note: () => S.ps?.full ? 'From the supporter export, against the 2024 registered voters.' : 'From the Poll Summary.' },
     unknown: { color: 'ramp-contact', breaks: [0.5, 0.7, 0.85, 0.95], alpha: ALPHA5, get: r => r.unknown, label: v => pct(v), quantile: 0.01,
       title: 'People with no support answer yet', note: 'From the Poll Summary’s “unknown” share. Darker means more people still to reach.' },
     skipped: { color: 'ramp-gotv', breaks: [10, 25, 50, 100], alpha: ALPHA5, get: r => r.not, label: v => fmt(v), quantile: 5, src: 'turnout',
@@ -45,7 +48,7 @@
     cast: { color: 'cast', breaks: [0.02, 0.05, 0.1, 0.2, 0.3], alpha: [0.06, 0.16, 0.28, 0.42, 0.56, 0.70], get: r => r.share, label: v => pct(v), src: 'cast',
       title: 'Voted so far, as a share of registered voters', note: 'From the Elections BC participation report, by the voting area it gives each voter.' },
   };
-  const has = needs => !needs || (needs === 'ps' ? !!S.ps : needs === 'lists' ? !!S.turnout : needs === 'cast' ? !!S.cast : true);
+  const has = needs => !needs || (needs === 'ps' ? !!S.ps : needs === 'unknown' ? S.ps?.totals.unknown != null : needs === 'lists' ? !!S.turnout : needs === 'cast' ? !!S.cast : true);
   const rowFor = (st, key) => st.src === 'turnout' ? turnoutFor(key) : st.src === 'cast' ? castFor(key) : S.ps && S.ps.rows.get(key);
   function setBreaks() {  // quintiles of the loaded polls, rounded, so each shade holds about a fifth of the map
     for (const st of Object.values(STEPS)) {
@@ -86,8 +89,9 @@
     } else {
       const st = STEPS[S.shade];
       const edges = ['<' + st.label(st.breaks[0]), ...st.breaks.slice(0, -1).map((b, i) => `${st.label(b)}–${st.label(st.breaks[i + 1])}`), st.label(st.breaks.at(-1)) + '+'];
-      $('legend').innerHTML = `<h3>${st.title}</h3>${swatches(st.alpha.map(a => [null, a]), st.color)}
-        <div class="scale-labels">${edges.map(t => `<span>${t}</span>`).join('')}</div><p>${st.note}</p>`;
+      const text = v => typeof v === 'function' ? v() : v;
+      $('legend').innerHTML = `<h3>${text(st.title)}</h3>${swatches(st.alpha.map(a => [null, a]), st.color)}
+        <div class="scale-labels">${edges.map(t => `<span>${t}</span>`).join('')}</div><p>${text(st.note)}</p>`;
     }
   }
   $('shade').addEventListener('click', e => {
@@ -104,7 +108,8 @@
     const parts = [`<b>Poll ${p.code}</b>`];
     if (p.place) parts.push(`2024: ${leanText(lean(p.place.day))}`);
     if (c) parts.push(`${fmt(c.n)} voted so far`);
-    if (r) parts.push(`${fmt(r.support)} supporters`, `${pct(r.unknown)} no answer yet`);
+    if (r) parts.push(`${fmt(r.support)} supporters`);
+    if (r?.unknown != null) parts.push(`${pct(r.unknown)} no answer yet`);
     if (t) parts.push(`${fmt(t.not)} didn’t vote in 2024`);
     return parts.join(' · ');
   }
@@ -114,8 +119,8 @@
     if (r || t || c) {
       h += '<div class="grid">';
       if (c) h += `<div><b>${fmt(c.n)}</b><span>voted so far${c.reg ? ` (${pct(c.share, 1)} of ${fmt(c.reg)} registered)` : ''}${c.ours ? `, ${fmt(c.ours)} on our supporter lists` : ''}</span></div>`;
-      if (r) h += `<div><b>${fmt(r.support)}</b><span>supporters found (${pct(r.supportPct, 1)} of ${fmt(r.pop)} people on file)</span></div>
-        <div><b>${pct(r.unknown)}</b><span>no support answer yet</span></div>`;
+      if (r) h += `<div><b>${fmt(r.support)}</b><span>supporters found (${pct(r.supportPct, 1)} of ${fmt(r.pop)} ${S.ps.full ? 'registered voters' : 'people on file'})</span></div>`;
+      if (r?.unknown != null) h += `<div><b>${pct(r.unknown)}</b><span>no support answer yet</span></div>`;
       if (t) h += `<div><b>${fmt(t.not)}</b><span>supporters didn’t vote in 2024${t.notPhone ? `, ${fmt(t.notPhone)} with a phone` : ''}</span></div>`;
       h += '</div>';
     } else h += `<p class="meta">${fmt(p.reg2024)} registered voters (2024)</p>`;
@@ -273,8 +278,10 @@
     if (s.ls) flags.push(`<p class="flag sign">Lawn sign requested${s.ls > 1 ? ` (${s.ls})` : ''}</p>`);
     if (s.out) flags.push(`<p class="flag">Outside the ${esc(P.riding)} boundary.</p>`);
     if (s.approx) flags.push('<p class="flag">Location estimated from neighbouring house numbers.</p>');
-    const meta = [`Poll ${s.va || s.poll || '?'}`, s.last ? `last contact ${day(s.last)}` : 'not contacted yet this election'];
-    return `<div class="pop"><h3>${esc(s.civic)}</h3><p class="meta">${meta.join(' · ')}</p><ul class="counts">${lines.join('')}</ul>${unitHtml}${flags.join('')}</div>`;
+    const dated = iso => iso.startsWith(String(new Date().getFullYear())) ? day(iso) : `${day(iso)}, ${iso.slice(0, 4)}`;
+    const meta = [`Poll ${s.va || s.poll || '?'}`, s.last ? `${S.ix?.full ? 'support updated' : 'last contact'} ${dated(s.last)}` : 'not contacted yet this election'];
+    const who = residentList(S.people?.get(s.key));
+    return `<div class="pop"><h3>${esc(s.civic)}</h3><p class="meta">${meta.join(' · ')}</p><ul class="counts">${lines.join('')}</ul>${who ? `<h4>Who lives here</h4>${who}` : unitHtml}${flags.join('')}</div>`;
   }
 
   // ------------------------------------------------------------------ reading the exports
@@ -373,11 +380,12 @@
         const [kind, head] = sniff(rows);
         if (kind === 'cast') { S.cast = mergeCast(S.cast, parseCast(rows, head, f)); castSave(S.cast); cast = true; continue; }
         other = true;
-        if (kind === 'ps') S.ps = parsePollSummary(rows, head, f);
+        if (kind === 'full') { const x = parseFull(rows, head, f); S.full = { ...S.full, [x.past ? 'past' : 'now']: x }; applyFull(); }
+        else if (kind === 'ps') S.ps = parsePollSummary(rows, head, f);
         else if (kind === 'ix') S.ix = parseInteractions(rows, head, f);
         else if (kind === 'list') { const l = parseList(rows, head, f, listKind(f.name)); S.lists = { ...S.lists, [l.kind]: l }; }
         else if (kind === 'voterNos') S.voterNos = parseVoterNos(rows, head, f);
-        else errors.push(`${f.name} isn’t a Poll Summary, Interactions export, voting list or Elections BC participation report. The Poll Summary starts with a “Poll, City, Reg Voters” header row; the Interactions export has a “Date, Voter, Poll, Address” table; a voting list has “Phone, Poll, Street, Voter_ID” columns; the participation report is the VotingParticipationReport .csv.`);
+        else errors.push(`${f.name} isn’t a Full supporter export, Poll Summary, Interactions export, voting list or Elections BC participation report. A Full export has “ID, First Name, Last Name, Support … Voter ID” columns; the Poll Summary starts with a “Poll, City, Reg Voters” header row; the Interactions export has a “Date, Voter, Poll, Address” table; a voting list has “Phone, Poll, Street, Voter_ID” columns; the participation report is the VotingParticipationReport .csv.`);
       } catch (e) {
         errors.push(`${f.name} couldn’t be read: ${e.message}`);
       }
@@ -392,6 +400,7 @@
   $('files').addEventListener('change', e => { loadFiles([...e.target.files]); e.target.value = ''; });
   $('clearData').addEventListener('click', () => {
     S.ps = null; S.ix = null; S.lists = null; S.turnout = null; S.cast = null; S.voterNos = null; S.castBy = null; S.sites = []; S.sort = null; S.builtIn = false; S.view = 'support';
+    S.full = { past: null, now: null }; S.people = null;
     castSave(null);
     houseLayer.clearLayers();
     S.shade = 'result';
@@ -408,6 +417,16 @@
     afterLoad();
   });
 
+  // the Full supporter exports: the 2024 one gives the 2024 lists, the current one the supporters found this election by house and by
+  // poll; both give the voters file and who lives at each house
+  function applyFull() {
+    const f = fromFull(S.full.past, S.full.now);
+    if (f.lists) S.lists = f.lists;
+    if (f.ix) { S.ix = f.ix; S.ps = f.ps; }
+    if (f.voterNos) S.voterNos = f.voterNos;
+    S.people = f.people;
+  }
+
   // ------------------------------------------------------------------ built-in data, decrypted with the team password (core.js)
   function applyBuiltIn(d) {
     const ps = d.ps && sniff(d.ps.rows), ix = d.ix && sniff(d.ix.rows);
@@ -415,6 +434,8 @@
     if (ix && ix[0] === 'ix') S.ix = parseInteractions(d.ix.rows, ix[1], { name: d.ix.name });
     for (const l of d.lists || []) S.lists = { ...S.lists, [l.kind]: listFromRows(l) };
     S.voterNos = d.voterNos ? voterNosFromRows(d.voterNos) : null;
+    for (const src of d.full || []) { const x = fullFromRows(src); S.full[x.past ? 'past' : 'now'] = x; }
+    if (d.full) applyFull();
     S.cast = castSaved();  // a participation report loaded on either map earlier in this tab
     if (S.cast) S.shade = 'cast';
     S.builtIn = true;
@@ -437,7 +458,8 @@
   function renderOverview() {
     const ps = S.ps, ix = S.ix, tv = S.turnout;
     const cast = S.cast;
-    const loaded = [ps && `poll summary${ps.asOf ? ` (${day(ps.asOf)})` : ''}`, ix && `canvass ${day(ix.earliest)} – ${day(ix.latest)}`, tv && '2024 voting lists',
+    const loaded = [ps && `${ps.full ? 'supporters this election' : 'poll summary'}${ps.asOf ? ` (${day(ps.asOf)})` : ''}`, ix && !ix.full && `canvass ${day(ix.earliest)} – ${day(ix.latest)}`,
+      tv && '2024 voting lists',
       cast && `participation report${cast.names.length > 1 ? `s (${cast.names.length})` : ''}${cast.asOf ? ` to ${stamp(cast.asOf)}` : ''}`].filter(Boolean);
     $('loader').classList.toggle('done', loaded.length > 0);
     $('loaded').hidden = !loaded.length;
@@ -460,10 +482,10 @@
       h += '<h2>This election</h2>';
       if (ps) {
         h += `<div class="goal"><p class="hero"><b>${fmt(ps.totals.support)}</b> supporters found</p>
-          <p>The Poll Summary’s current support count${ps.asOf ? ` on ${day(ps.asOf)}` : ''}. For scale, the NDP won with ${fmt(total.ndp)} votes in 2024${tv ? `, and only ${pct(tv.voted / (tv.voted + tv.not))} of the supporters on the 2024 lists voted` : ''}.</p></div>`;
+          <p>${ps.full ? 'Supporters identified this election, from the supporter export' : 'The Poll Summary’s current support count'}${ps.asOf ? ` of ${day(ps.asOf)}` : ''}. For scale, the NDP won with ${fmt(total.ndp)} votes in 2024${tv ? `, and only ${pct(tv.voted / (tv.voted + tv.not))} of the supporters on the 2024 lists voted` : ''}.</p></div>`;
       }
       h += '<div class="kpis">';
-      if (ps) h += `<div class="kpi"><b>${fmt(ps.totals.pop - ps.totals.noAnswer)}</b><span>people have given a support answer (${pct(1 - ps.totals.unknown)} of the ${fmt(ps.totals.pop)} on file)</span></div>`;
+      if (ps && ps.totals.unknown != null) h += `<div class="kpi"><b>${fmt(ps.totals.pop - ps.totals.noAnswer)}</b><span>people have given a support answer (${pct(1 - ps.totals.unknown)} of the ${fmt(ps.totals.pop)} on file)</span></div>`;
       if (tv) h += `<div class="kpi"><b>${fmt(tv.notInside)}</b><span>supporters living in the riding didn’t vote in 2024</span></div>`;
       h += '</div>';
       if (S.sites.length) h += `<div class="actions"><button type="button" class="btn primary" data-go="support">Map supporters</button>${tv ? '<button type="button" class="btn" data-go="skipped">Map 2024 non-voters</button>' : ''}</div>`;
@@ -495,7 +517,7 @@
     { k: 'lean', label: '2024', get: r => r.lean ?? -999, show: r => r.lean == null ? '—' : chip(r.lean), r: true },
     { k: 'reg', label: 'Voters', get: r => r.reg, show: r => fmt(r.reg), r: true, when: () => !S.ps },
     { k: 'support', label: 'Supporters', get: r => r.support, show: r => fmt(r.support), r: true, when: () => !!S.ps },
-    { k: 'unknown', label: 'No answer', get: r => r.unknown, show: r => pct(r.unknown), r: true, when: () => !!S.ps },
+    { k: 'unknown', label: 'No answer', get: r => r.unknown, show: r => pct(r.unknown), r: true, when: () => S.ps?.totals.unknown != null },
     { k: 'skipped', label: 'Didn’t vote ’24', get: r => r.skipped, show: r => fmt(r.skipped), r: true, when: () => !!S.turnout },
     { k: 'cast', label: 'Voted', get: r => r.cast, show: r => fmt(r.cast), r: true, when: () => !!S.cast },
   ];
@@ -517,7 +539,8 @@
     $('pollHead').innerHTML = cols.map(c => `<th class="${c.r ? 'r' : ''}" ${c.k === sort.k ? `aria-sort="${sort.dir > 0 ? 'ascending' : 'descending'}"` : ''}><button type="button" data-k="${c.k}">${c.label}</button></th>`).join('');
     $('pollBody').innerHTML = rows.map(r => `<tr class="${r.onMap ? 'go' : ''}${r.key === S.sel ? ' sel' : ''}" ${r.onMap ? 'tabindex="0"' : ''} data-key="${esc(r.key)}">${cols.map(c => `<td class="${c.r ? 'r' : ''}">${c.show(r)}</td>`).join('')}</tr>`).join('');
     const notes = ['<b>2024</b> is the result at the poll’s 2024 voting place.'];
-    if (S.ps) notes.push('<b>Supporters</b> and <b>No answer</b> (share of people on file with no support answer) come from the Poll Summary.');
+    if (S.ps?.full) notes.push('<b>Supporters</b> are the supporters identified this election, from the supporter export.');
+    else if (S.ps) notes.push('<b>Supporters</b> and <b>No answer</b> (share of people on file with no support answer) come from the Poll Summary.');
     if (S.turnout) notes.push('<b>Didn’t vote ’24</b> counts supporters on the 2024 didn’t-vote list.');
     if (S.cast) notes.push('<b>Voted</b> counts everyone in the participation report so far.');
     notes.push('Click a column to sort, or a poll to see it on the map.');

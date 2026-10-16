@@ -7,10 +7,12 @@
   const { P, $, fmt, pct, esc, day, reduced, phone, tok, lean, chip, RESULT_STEPS, RESULT_LABELS, classOf, runs, polls, pollByKey,
     partyBars, normStreet, siteKey, prettyCivic, locate, pollAt, listAddress, sniff, pollKey, parsePollSummary, parseInteractions, parseList,
     listKind, NO_POLL, listFromRows, readWorkbook, T1_ON, t1FromRows, parseT1, callsFromRows, parseCalls, knockedFromRows, parseKnocked,
-    stamp, parseCast, mergeCast, voterNosFromRows, parseVoterNos, castPeople, castSave, castSaved, voteTab, ENC, gate, sealExtra, baseMap, placer, sheet } = SCC;
+    stamp, parseCast, mergeCast, voterNosFromRows, parseVoterNos, castPeople, castSave, castSaved, voteTab, parseFull, fullFromRows, fromFull, residentList,
+    ENC, gate, sealExtra, baseMap, placer, sheet } = SCC;
   const app = $('app');
 
   const S = { ps: null, ix: null, lists: null, plan: null, t1: null, calls: null, knocked: null, cast: null, voterNos: null, castPpl: null, t: null, rows: new Map(), doors: [],
+    full: { past: null, now: null }, people: null,
     unchecked: new Set(), focus: new Map(), fill: 'now', on: new Set(['numbers', 'counts', 'plan', 'streets', 'routes', 'castDots', 't1dots', 't2dots', 'knockRings', 'callRings']),
     sel: null, sort: null, builtIn: false };
   const R = { routes: [], sel: 0, turf: null };  // the door-knocking routes on the map
@@ -330,7 +332,7 @@
     { k: 'cast', label: 'Voted so far', sub: 'Share of registered voters who have voted', color: 'cast', breaks: [0.02, 0.05, 0.1, 0.2, 0.3], alpha: ALPHA6,
       get: r => r.cast && r.reg ? r.cast.n / r.reg : null, edges: pctEdges, needs: () => !!S.cast,
       note: 'Everyone in the Elections BC participation report, by the voting area it gives them, against the poll’s registered voters.' },
-    { k: 'now', label: 'Supporters now', sub: 'Current support in the Poll Summary', color: 'con', breaks: COUNT_BREAKS, alpha: ALPHA6, get: r => r.now,
+    { k: 'now', label: 'Supporters now', sub: 'Supporters identified this election', color: 'con', breaks: COUNT_BREAKS, alpha: ALPHA6, get: r => r.now,
       edges: countEdges, needs: () => !!S.ps, note: 'Same scale as “2024 supporters”, so switching between the two compares them.' },
     { k: 'y24', label: '2024 supporters', sub: 'People on the 2024 supporter lists', color: 'y24', breaks: COUNT_BREAKS, alpha: ALPHA6, get: r => r.y24,
       edges: countEdges, needs: () => !!S.t, note: 'Voted and didn’t-vote lists together. Same scale as “Supporters now”.' },
@@ -345,7 +347,7 @@
     { k: 't2', label: 'T2 households', sub: 'Knocked, called, said yes, didn’t vote in 2024', color: 't2', breaks: [1, 3, 5, 8, 12], alpha: ALPHA6,
       get: r => r.calls ? r.calls.t2 : null, edges: countEdges, needs: () => !!S.calls, note: 'Households that meet all four T2 conditions, by the poll their address is in.' },
     { k: 'unknown', label: 'No answer yet', sub: 'People on file without a support answer', color: 'ramp-contact', breaks: [0.6, 0.7, 0.8, 0.9], alpha: ALPHA5,
-      get: r => r.unknown, edges: pctEdges, needs: () => !!S.ps, note: 'Darker means more people still to reach.' },
+      get: r => r.unknown, edges: pctEdges, needs: () => S.ps?.totals.unknown != null, note: 'Darker means more people still to reach.' },
     { k: 'result', label: '2024 result', sub: 'Election day at the poll’s 2024 voting place', needs: () => true,
       note: 'Polls that voted at the same place share its colour.' },
   ];
@@ -460,7 +462,7 @@
   const ANSWER_NAMES = { Y: 'said yes', N: 'said no', U: 'not sure' };
   // one popup for a house: T1, phone bank, door knock and the 2024 lists together
   function openHouse(d) {
-    const units = [...d.units].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+    const units = [...d.units].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })), who = residentList(S.people?.get(d.key));
     const lines = d.homes.map(h => {
       const said = [h.answered ? (ANSWER_NAMES[h.answer] || 'answered, no result recorded') : 'not reached', h.flags & 8 && 'replied yes by text', h.flags & 2 && 'Conservative at the door'].filter(Boolean).join(', ');
       return `<li><b>${h.t2 ? 'T2' : h.dnc ? 'Do not contact' : LIST_NAMES[h.list] ? `L${h.list}` : 'Called'}</b> · ${h.voters} voter${h.voters > 1 ? 's' : ''} · ${said}${h.door ? ' · door knocked' : ''}${h.plan ? ` · plans to vote ${esc(h.plan)}` : ''}${h.ride ? ' · needs a ride' : ''}</li>`;
@@ -469,8 +471,8 @@
       <p class="meta">Poll ${esc(d.poll)}${d.approx ? ' · location estimated' : ''}</p><p class="meta">${contactLine(d)}</p>${castPart(d)}${t1Part(d)}
       ${lines ? `<ul class="calls">${lines}</ul>` : ''}
       ${d.dnc ? '<p class="flag">Someone here asked us to stop contacting them. This address is left off every route.</p>' : ''}
-      ${d.not || d.voted ? `<p class="meta">${[d.not && `${d.not} on the 2024 didn’t-vote list`, d.voted && `${d.voted} on the 2024 voted list`].filter(Boolean).join(', ')}.</p>` : ''}
-      ${units.length ? `<p class="meta units">Units: ${units.slice(0, 40).map(u => `<span>${esc(u)}</span>`).join('')}</p>` : ''}</div>`).openOn(map);
+      ${d.not || d.voted || d.now ? `<p class="meta">${[d.now && `${d.now} supporter${d.now > 1 ? 's' : ''} this election`, d.not && `${d.not} on the 2024 didn’t-vote list`, d.voted && `${d.voted} on the 2024 voted list`].filter(Boolean).join(', ')}.</p>` : ''}
+      ${who ? `<h4>Who lives here</h4>${who}` : units.length ? `<p class="meta units">Units: ${units.slice(0, 40).map(u => `<span>${esc(u)}</span>`).join('')}</p>` : ''}</div>`).openOn(map);
   }
   const planPlaces = () => (S.plan?.places || []).map(pl => ({ ...pl, hit: locate(pl.address) })).filter(pl => pl.hit);
   let planMarks = [];  // screen boxes the poll labels keep clear of: [latlng, dx, dy, w, h]
@@ -693,7 +695,7 @@
         const ours = S.castPpl.filter(x => x.ours).length;
         h.push(`<div><b><i class="k cast"></i>${fmt(S.castPpl.length)}</b><span>voted so far</span><small>${fmt(ours)} on our supporter lists${S.cast.asOf ? ` · report of ${stamp(S.cast.asOf)}` : ''}</small></div>`);
       }
-      if (ps) h.push(`<div><b><i class="k now"></i>${fmt(ps.totals.support)}</b><span>supporters now</span><small>Poll Summary${ps.asOf ? `, ${day(ps.asOf)}` : ''}</small></div>`);
+      if (ps) h.push(`<div><b><i class="k now"></i>${fmt(ps.totals.support)}</b><span>supporters now</span><small>${ps.full ? 'Supporter export' : 'Poll Summary'}${ps.asOf ? `, ${day(ps.asOf)}` : ''}</small></div>`);
       if (t) h.push(`<div><b><i class="k y24"></i>${fmt(t.people)}</b><span>supporters on the 2024 lists</span><small>${fmt(t.voted)} voted in 2024, ${fmt(t.not)} didn’t</small></div>`);
       if (S.t1) {
         const ppl = S.t1.people, known = ppl.filter(x => x.on).length, fresh = ppl.filter(x => x.on === 0).length, voted = ppl.filter(x => x.voted).length + S.t1Cast;
@@ -704,7 +706,7 @@
         h.push(`<div><b><i class="k t2"></i>${fmt(t2.length)}</b><span>T2 households (${fmt(t2.reduce((n, x) => n + x.voters, 0))} voters)</span><small>${fmt(hs.length)} called, ${fmt(hs.filter(x => x.answered).length)} reached${S.calls.doorChecked ? ` · ${fmt(near)} more need only a door knock` : ' · door knocks not checked'}${S.calls.last ? ` · calls to ${day(S.calls.last)}` : ''}</small></div>`);
       }
       h.push('</div>');
-    } else h.push('<p class="note">Unlock the campaign data, or load a Poll Summary, to see supporters by poll.</p>');
+    } else h.push('<p class="note">Unlock the campaign data, or load the Full supporter exports, to see supporters by poll.</p>');
     const rows = [...S.rows.values()].filter(r => r.p && both(r));
     if (rows.length) {
       const counts = STATUS.map(s => ({ s, n: rows.filter(r => statusOf(r) === s).length })).filter(x => x.n);
@@ -721,7 +723,7 @@
       }).join('')}</ul>`);
     }
     $('summary').innerHTML = h.join('');
-    const loaded = [ps && `Poll Summary${ps.asOf ? ` (${day(ps.asOf)})` : ''}`, t && '2024 supporter lists', S.t1 && 'T1 list', S.calls && 'phone bank', S.plan && 'GOTV plan',
+    const loaded = [ps && `${ps.full ? 'Supporters this election' : 'Poll Summary'}${ps.asOf ? ` (${day(ps.asOf)})` : ''}`, t && '2024 supporter lists', S.t1 && 'T1 list', S.calls && 'phone bank', S.plan && 'GOTV plan',
       S.cast && `participation report${S.cast.names.length > 1 ? `s (${S.cast.names.length})` : ''}${S.cast.asOf ? ` to ${stamp(S.cast.asOf)}` : ''}`].filter(Boolean);
     $('loaded').hidden = !loaded.length;
     $('loaded').textContent = loaded.length ? `Loaded: ${loaded.join(' · ')}` : '';
@@ -736,7 +738,7 @@
     { k: 'score', label: 'Focus', get: r => r.f.score, show: r => fmt(r.f.score), r: true, title: 'Focus score' },
     { k: 'skipped', label: 'No vote ’24', get: r => r.f.skipped, show: r => `${fmt(r.f.skipped)}${r.f.unchecked ? '*' : ''}`, r: true, when: () => !!S.t,
       title: '2024 supporters still on the voters list who didn’t vote in 2024' },
-    { k: 'now', label: 'Now', get: r => r.now ?? -1, show: r => r.now == null ? '—' : fmt(r.now), r: true, when: () => !!S.ps, title: 'Supporters now (Poll Summary)' },
+    { k: 'now', label: 'Now', get: r => r.now ?? -1, show: r => r.now == null ? '—' : fmt(r.now), r: true, when: () => !!S.ps, title: 'Supporters identified this election' },
     { k: 'cast', label: 'Voted', get: r => r.cast?.n ?? -1, show: r => r.cast ? fmt(r.cast.n) : '—', r: true, when: () => !!S.cast, title: 'Voted so far (participation report)' },
     { k: 't1', label: 'T1', get: r => r.t1?.n ?? -1, show: r => r.t1 ? fmt(r.t1.n) : '—', r: true, when: () => !!S.t1, title: 'People on the T1 list' },
     { k: 't2', label: 'T2', get: r => r.calls?.t2 ?? -1, show: r => r.calls ? fmt(r.calls.t2) : '—', r: true, when: () => !!S.calls, title: 'T2 households: knocked, called, said yes, didn’t vote in 2024' },
@@ -1089,6 +1091,15 @@
     drawPlan();
     renderAll();
   }
+  // the Full supporter exports: the 2024 one gives the 2024 lists, the current one the supporters found this election by house and by
+  // poll; both give the voters file and who lives at each house
+  function applyFull() {
+    const f = fromFull(S.full.past, S.full.now);
+    if (f.lists) S.lists = f.lists;
+    if (f.ix) { S.ix = f.ix; S.ps = f.ps; }
+    if (f.voterNos) S.voterNos = f.voterNos;
+    S.people = f.people;
+  }
   function applyBuiltIn(d) {
     const ps = d.ps && sniff(d.ps.rows), ix = d.ix && sniff(d.ix.rows);
     if (ps && ps[0] === 'ps') S.ps = parsePollSummary(d.ps.rows, ps[1], { name: d.ps.name });
@@ -1099,6 +1110,8 @@
     S.calls = d.calls ? { ...callsFromRows(d.calls), src: d.calls } : null;
     S.knocked = d.knocked ? knockedFromRows(d.knocked) : null;
     S.voterNos = d.voterNos ? voterNosFromRows(d.voterNos) : null;
+    for (const src of d.full || []) { const x = fullFromRows(src); S.full[x.past ? 'past' : 'now'] = x; }
+    if (d.full) applyFull();
     S.cast = castSaved();  // a participation report loaded on either map earlier in this tab
     if (S.cast) S.fill = 'cast';
     S.builtIn = true;
@@ -1110,7 +1123,8 @@
       try {
         const rows = await readWorkbook(f);
         const [kind, head] = sniff(rows);
-        if (kind === 'ps') S.ps = parsePollSummary(rows, head, f);
+        if (kind === 'full') { const x = parseFull(rows, head, f); S.full = { ...S.full, [x.past ? 'past' : 'now']: x }; applyFull(); S.sealable = true; }
+        else if (kind === 'ps') S.ps = parsePollSummary(rows, head, f);
         else if (kind === 'list') { const l = parseList(rows, head, f, listKind(f.name)); S.lists = { ...S.lists, [l.kind]: l }; }
         else if (kind === 'ix') S.ix = parseInteractions(rows, head, f);
         else if (kind === 't1') S.t1 = parseT1(rows, head, f);
@@ -1118,7 +1132,7 @@
         else if (kind === 'knocked') { S.knocked = parseKnocked(rows, head, f); S.sealable = true; }
         else if (kind === 'cast') { S.cast = mergeCast(S.cast, parseCast(rows, head, f)); castSave(S.cast); S.fill = 'cast'; S.on.add('castDots'); }
         else if (kind === 'voterNos') { S.voterNos = parseVoterNos(rows, head, f); S.sealable = true; }
-        else errors.push(`${f.name} isn’t a Poll Summary, Interactions export, 2024 supporter list, T1 list, T2 households, door-knocked houses, voters file or Elections BC participation report.`);
+        else errors.push(`${f.name} isn’t a Full supporter export, Poll Summary, Interactions export, 2024 supporter list, T1 list, T2 households, door-knocked houses, voters file or Elections BC participation report.`);
       } catch (x) {
         errors.push(`${f.name} couldn’t be read: ${x.message}`);
       }
@@ -1134,6 +1148,8 @@
       if (S.calls?.src) extra.calls = S.calls.src;
       if (S.knocked?.src) extra.knocked = S.knocked.src;
       if (S.voterNos?.src) extra.voterNos = S.voterNos.src;  // the extra file is replaced whole, so carry the voter numbers over
+      const full = [S.full.past?.src, S.full.now?.src].filter(Boolean);  // ...and both Full exports, the built-in one with a newer one
+      if (full.length) extra.full = full;
       const text = await sealExtra(extra);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
@@ -1148,7 +1164,7 @@
   $('files').addEventListener('change', e => { loadFiles([...e.target.files]); e.target.value = ''; });
   $('lockBtn').addEventListener('click', () => {
     Object.assign(S, { ps: null, ix: null, lists: null, plan: null, t1: null, calls: null, knocked: null, cast: null, voterNos: null, sealable: false, t: null, rows: new Map(), doors: [],
-      focus: new Map(), sel: null, builtIn: false });
+      full: { past: null, now: null }, people: null, focus: new Map(), sel: null, builtIn: false });
     map.closePopup();
     $('seal').hidden = true;
     afterLoad();

@@ -7,7 +7,7 @@
 <!-- The page may load its own files and Google Fonts. The only thing that leaves it is the sign-in line (time, map, device ID,
      browser, internet address) sent to the campaign's Firebase database; no campaign data and no loaded file ever leaves it. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://api.ipify.org https://api64.ipify.org; form-action 'none'; base-uri 'none'">
-<title>Surrey City Centre Poll Map</title>
+<title>Surrey-Guildford Poll Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
@@ -17,7 +17,7 @@
 <body>
 <div class="gate" id="gate" hidden>
   <form class="gate-card" id="gateForm" autocomplete="on">
-    <p class="eyebrow">Surrey City Centre · SRC</p>
+    <p class="eyebrow">Surrey-Guildford · SRG</p>
     <h1>Poll map</h1>
     <p>Team access. Enter the password you were given.</p>
     <label for="pw">Password</label>
@@ -30,7 +30,7 @@
 <div class="app wide" id="app">
   <aside class="panel" aria-label="Poll details">
     <header class="head">
-      <p class="eyebrow" id="eyebrow">Surrey City Centre</p>
+      <p class="eyebrow" id="eyebrow">Surrey-Guildford</p>
       <h1>Poll map</h1>
       <button class="sheet-toggle" id="sheetToggle" type="button" aria-expanded="true" aria-controls="panelBody">Hide</button>
       <nav class="maps-nav" aria-label="Maps"><a href="index.html">Campaign map</a><a href="polls.html" aria-current="page">Poll map</a><a href="desk.html">Check-in desk</a></nav>
@@ -58,10 +58,10 @@
             <button type="button" class="btn quiet" id="castClear" hidden>Clear the voted list</button>
           </div>
           <p class="note">Load the Elections BC <b>participation report</b> (.csv) to see who has voted so far. Load each new report as it comes: they add up, and the list stays with this tab on both maps until you lock it or close the tab. Nothing needs publishing.</p>
-          <p class="note">A Poll Summary, Interactions export, 2024 list, T1 list, T2 households or door-knocked houses file you load opens in this browser only and is never uploaded. Closing the tab clears it.</p>
+          <p class="note">A Full supporter export, Poll Summary, Interactions export, 2024 list, T1 list, T2 households or door-knocked houses file you load opens in this browser only and is never uploaded. Closing the tab clears it.</p>
           <p class="error" id="loadError" role="alert" hidden></p>
           <div class="seal" id="seal" hidden>
-            <p class="note">To build the T2, door-knock or voters files into the map for the whole team, save it locked with the team password and send the saved file to Claude to publish.</p>
+            <p class="note">To build newer Full exports, or the T2, door-knock or voters files, into the map for the whole team, save it locked with the team password and send the saved file to Claude to publish.</p>
             <button type="button" class="btn" id="sealBtn">Save for the team</button>
           </div>
         </div>

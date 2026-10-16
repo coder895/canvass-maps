@@ -7,7 +7,7 @@
 <!-- The page may load its own files and Google Fonts. The only thing that leaves it is the sign-in line (time, map, device ID,
      browser, internet address) sent to the campaign's Firebase database; no campaign data and no loaded file ever leaves it. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://api.ipify.org https://api64.ipify.org; form-action 'none'; base-uri 'none'">
-<title>Surrey City Centre Campaign Map</title>
+<title>Surrey-Guildford Campaign Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
@@ -17,7 +17,7 @@
 <body>
 <div class="gate" id="gate" hidden>
   <form class="gate-card" id="gateForm" autocomplete="on">
-    <p class="eyebrow">Surrey City Centre · SRC</p>
+    <p class="eyebrow">Surrey-Guildford · SRG</p>
     <h1>Campaign map</h1>
     <p>Team access. Enter the password you were given.</p>
     <label for="pw">Password</label>
@@ -30,7 +30,7 @@
 <div class="app" id="app">
   <aside class="panel" aria-label="Campaign details">
     <header class="head">
-      <p class="eyebrow" id="eyebrow">Surrey City Centre</p>
+      <p class="eyebrow" id="eyebrow">Surrey-Guildford</p>
       <h1>Campaign map</h1>
       <button class="sheet-toggle" id="sheetToggle" type="button" aria-expanded="true" aria-controls="panelBody">Hide</button>
       <nav class="maps-nav" aria-label="Maps"><a href="index.html" aria-current="page">Campaign map</a><a href="polls.html">Poll map</a><a href="desk.html">Check-in desk</a></nav>
@@ -46,7 +46,7 @@
         <div class="loader" id="loader">
           <div class="intro">
             <h2>Your campaign data</h2>
-            <p>Load the <b>Poll Summary</b>, <b>Interactions</b> export and the <b>2024 voted / not-voted</b> supporter lists (.xlsx). They are opened in this browser only and never uploaded. Closing the tab clears them.</p>
+            <p>Load the two <b>Full</b> supporter exports (.xlsx): the 2024 list and this election’s. A Poll Summary, Interactions export and 2024 voted / not-voted lists work too. They are opened in this browser only and never uploaded. Closing the tab clears them.</p>
             <p>To see who has voted so far, load the Elections BC <b>participation report</b> (.csv). Load each new report as it comes: they add up, and the list stays with this tab on both maps until you lock it or close the tab.</p>
           </div>
           <p class="loaded" id="loaded" hidden></p>

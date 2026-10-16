@@ -228,6 +228,13 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .pop .units span { display: inline-block; padding: 0 5px; margin: 2px 2px 0 0; border-radius: 3px; border: 1px solid var(--rule); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pop .flag { padding: 5px 8px; border-radius: 4px; font-size: 12.5px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .pop .flag.sign { background: color-mix(in srgb, var(--sign) 22%, transparent); }
+.pop ul.people { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+.pop ul.people li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: start; padding-top: 6px; border-top: 1px solid var(--rule); }
+.pop ul.people li:first-child { border-top: 0; padding-top: 0; }
+.pop ul.people small { display: block; color: var(--muted); font-size: 12px; }
+.pop ul.people .unit { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pop ul.people .tel { text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pop ul.people .tel a { color: inherit; }
 
 .street-label, .house-label, .poll-label, .place-label { pointer-events: none; }
 .street-label span { position: absolute; transform-origin: 0 0; white-space: nowrap; font: 500 11px/1 var(--font-ui); letter-spacing: .04em; color: var(--road-label);
