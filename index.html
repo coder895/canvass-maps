@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<!-- The page may load its own files and Google Fonts. The only thing that leaves it is the sign-in line (time, map, device ID,
+     browser, internet address) sent to the campaign's Firebase database; no campaign data and no loaded file ever leaves it. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://api.ipify.org https://api64.ipify.org; form-action 'none'; base-uri 'none'">
+<title>Surrey City Centre Campaign Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="gateForm" autocomplete="on">
+    <p class="eyebrow">Surrey City Centre · SRC</p>
+    <h1>Campaign map</h1>
+    <p>Team access. Enter the password you were given.</p>
+    <label for="pw">Password</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" spellcheck="false" required>
+    <button class="btn primary" type="submit" id="unlock">Unlock</button>
+    <p class="error" id="gateError" role="alert" hidden></p>
+    <p class="note">The campaign data on this page is encrypted. Without the password it can’t be read, even from the page source.</p>
+  </form>
+</div>
+<div class="app" id="app">
+  <aside class="panel" aria-label="Campaign details">
+    <header class="head">
+      <p class="eyebrow" id="eyebrow">Surrey City Centre</p>
+      <h1>Campaign map</h1>
+      <button class="sheet-toggle" id="sheetToggle" type="button" aria-expanded="true" aria-controls="panelBody">Hide</button>
+      <nav class="maps-nav" aria-label="Maps"><a href="index.html" aria-current="page">Campaign map</a><a href="polls.html">Poll map</a><a href="desk.html">Check-in desk</a></nav>
+    </header>
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-overview" aria-controls="pane-overview" aria-selected="true">Overview</button>
+      <button type="button" role="tab" id="tab-polls" aria-controls="pane-polls" aria-selected="false" tabindex="-1">Polls</button>
+      <button type="button" role="tab" id="tab-homes" aria-controls="pane-homes" aria-selected="false" tabindex="-1">Households</button>
+      <button type="button" role="tab" id="tab-voted" aria-controls="pane-voted" aria-selected="false" tabindex="-1">Voted</button>
+    </div>
+    <div class="body" id="panelBody">
+      <section class="pane" id="pane-overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="loader" id="loader">
+          <div class="intro">
+            <h2>Your campaign data</h2>
+            <p>Load the <b>Poll Summary</b>, <b>Interactions</b> export and the <b>2024 voted / not-voted</b> supporter lists (.xlsx). They are opened in this browser only and never uploaded. Closing the tab clears them.</p>
+            <p>To see who has voted so far, load the Elections BC <b>participation report</b> (.csv). Load each new report as it comes: they add up, and the list stays with this tab on both maps until you lock it or close the tab.</p>
+          </div>
+          <p class="loaded" id="loaded" hidden></p>
+          <div class="load-row">
+            <label class="btn primary" for="files" id="chooseLabel">Choose files</label>
+            <input id="files" type="file" accept=".xlsx,.xls,.csv" multiple>
+            <button type="button" class="btn quiet" id="clearData" hidden>Lock</button>
+            <button type="button" class="btn quiet" id="castClear" hidden>Clear the voted list</button>
+          </div>
+          <p class="error" id="loadError" role="alert" hidden></p>
+        </div>
+        <div id="canvass"></div>
+        <div id="result2024"></div>
+      </section>
+      <section class="pane" id="pane-polls" role="tabpanel" aria-labelledby="tab-polls" hidden>
+        <p class="note" id="pollsNote"></p>
+        <div class="table-wrap">
+          <table class="polls" id="pollTable">
+            <thead><tr id="pollHead"></tr></thead>
+            <tbody id="pollBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="pane" id="pane-homes" role="tabpanel" aria-labelledby="tab-homes" hidden>
+        <div id="homesEmpty" class="empty">
+          <h2>Households</h2>
+          <p>Load the Interactions export or the 2024 supporter lists to put every contacted household on the map, labelled by address.</p>
+          <label class="btn primary" for="files">Choose files</label>
+        </div>
+        <div id="homes" hidden>
+          <div class="show">
+            <h2>Show on the map</h2>
+            <div class="presets" id="views" role="group" aria-label="Show on the map"></div>
+            <div class="key" id="key"></div>
+          </div>
+          <div class="search">
+            <label for="find">Find an address</label>
+            <input id="find" type="search" list="addrs" placeholder="e.g. 13450 104 Ave" autocomplete="off">
+            <datalist id="addrs"></datalist>
+          </div>
+          <button type="button" class="btn" id="downloadCsv">Download this list (CSV)</button>
+          <details class="check" id="check"></details>
+        </div>
+      </section>
+      <section class="pane" id="pane-voted" role="tabpanel" aria-labelledby="tab-voted" hidden></section>
+    </div>
+  </aside>
+  <div class="mapwrap">
+    <div id="map" role="region" aria-label="Riding map"></div>
+    <div class="shade" id="shade" role="radiogroup" aria-label="Shade polls by"></div>
+    <div class="legend" id="legend" aria-live="polite"></div>
+  </div>
+</div>
+<div class="dropzone" id="dropzone" hidden><p>Drop your campaign files here</p></div>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="data/public.js"></script>
+<script src="data/campaign.enc.js"></script>
+<script src="data/campaign.extra.enc.js"></script>
+<script src="desk-config.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

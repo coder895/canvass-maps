@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "desk": {
+      ".read": true,
+      ".write": true
+    },
+    "signins": {
+      "$id": {
+        ".write": "!data.exists()",
+        ".validate": "newData.hasChildren(['at', 'page', 'device']) && newData.child('at').val() === now",
+        "at": { ".validate": "newData.isNumber()" },
+        "page": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "device": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "browser": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "os": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "type": { ".validate": "newData.isString() && newData.val().length <= 20" },
+        "ua": { ".validate": "newData.isString() && newData.val().length <= 300" },
+        "ip": { ".validate": "newData.isString() && newData.val().length <= 45" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<!-- The page may load its own files and Google Fonts. The only thing that leaves it is the sign-in line (time, map, device ID,
+     browser, internet address) sent to the campaign's Firebase database; no campaign data and no loaded file ever leaves it. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://api.ipify.org https://api64.ipify.org; form-action 'none'; base-uri 'none'">
+<title>Surrey City Centre Poll Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="gateForm" autocomplete="on">
+    <p class="eyebrow">Surrey City Centre · SRC</p>
+    <h1>Poll map</h1>
+    <p>Team access. Enter the password you were given.</p>
+    <label for="pw">Password</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password" spellcheck="false" required>
+    <button class="btn primary" type="submit" id="unlock">Unlock</button>
+    <p class="error" id="gateError" role="alert" hidden></p>
+    <p class="note">The campaign data on this page is encrypted. Without the password it can’t be read, even from the page source.</p>
+  </form>
+</div>
+<div class="app wide" id="app">
+  <aside class="panel" aria-label="Poll details">
+    <header class="head">
+      <p class="eyebrow" id="eyebrow">Surrey City Centre</p>
+      <h1>Poll map</h1>
+      <button class="sheet-toggle" id="sheetToggle" type="button" aria-expanded="true" aria-controls="panelBody">Hide</button>
+      <nav class="maps-nav" aria-label="Maps"><a href="index.html">Campaign map</a><a href="polls.html" aria-current="page">Poll map</a><a href="desk.html">Check-in desk</a></nav>
+    </header>
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" id="tab-map" aria-controls="pane-map" aria-selected="true">Map</button>
+      <button type="button" role="tab" id="tab-focus" aria-controls="pane-focus" aria-selected="false" tabindex="-1">Focus</button>
+      <button type="button" role="tab" id="tab-routes" aria-controls="pane-routes" aria-selected="false" tabindex="-1">Routes</button>
+      <button type="button" role="tab" id="tab-voted" aria-controls="pane-voted" aria-selected="false" tabindex="-1">Voted</button>
+    </div>
+    <div class="body" id="panelBody">
+      <section class="pane" id="pane-map" role="tabpanel" aria-labelledby="tab-map">
+        <div id="summary" aria-live="polite"></div>
+        <div class="layers-panel">
+          <h2>Show on the map</h2>
+          <fieldset class="switches" id="fills"><legend>Colour the polls by <span class="aside">one at a time</span></legend></fieldset>
+          <fieldset class="switches" id="overlays"><legend>On each poll</legend></fieldset>
+        </div>
+        <div class="loader done" id="loader">
+          <p class="loaded" id="loaded" hidden></p>
+          <div class="load-row">
+            <label class="btn" for="files" id="chooseLabel">Load newer files</label>
+            <input id="files" type="file" accept=".xlsx,.xls,.csv" multiple>
+            <button type="button" class="btn quiet" id="lockBtn">Lock</button>
+            <button type="button" class="btn quiet" id="castClear" hidden>Clear the voted list</button>
+          </div>
+          <p class="note">Load the Elections BC <b>participation report</b> (.csv) to see who has voted so far. Load each new report as it comes: they add up, and the list stays with this tab on both maps until you lock it or close the tab. Nothing needs publishing.</p>
+          <p class="note">A Poll Summary, Interactions export, 2024 list, T1 list, T2 households or door-knocked houses file you load opens in this browser only and is never uploaded. Closing the tab clears it.</p>
+          <p class="error" id="loadError" role="alert" hidden></p>
+          <div class="seal" id="seal" hidden>
+            <p class="note">To build the T2, door-knock or voters files into the map for the whole team, save it locked with the team password and send the saved file to Claude to publish.</p>
+            <button type="button" class="btn" id="sealBtn">Save for the team</button>
+          </div>
+        </div>
+      </section>
+      <section class="pane" id="pane-focus" role="tabpanel" aria-labelledby="tab-focus" hidden>
+        <div class="focus-head">
+          <h2>Where to focus door knocking</h2>
+          <div class="seg" id="order" role="group" aria-label="Order" hidden>
+            <button type="button" data-order="score" aria-pressed="true">By focus score</button>
+            <button type="button" data-order="plan" aria-pressed="false">Party plan first</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="polls focus" id="pollTable">
+            <thead><tr id="pollHead"></tr></thead>
+            <tbody id="pollBody"></tbody>
+            <tfoot id="pollFoot"></tfoot>
+          </table>
+        </div>
+        <div id="pollsNote"></div>
+      </section>
+      <section class="pane" id="pane-routes" role="tabpanel" aria-labelledby="tab-routes" hidden>
+        <p class="note" id="routesEmpty">Unlock the campaign data, or load the 2024 lists or the Interactions export, to plan door-knocking routes.</p>
+        <form class="route-form" id="routeForm" hidden>
+          <h2>Door-knocking routes</h2>
+          <label class="field"><span>Area</span><select id="turf"></select></label>
+          <fieldset class="checks"><legend>Knock on doors with</legend>
+            <label><input type="checkbox" id="kNot" checked> 2024 supporters who didn’t vote</label>
+            <label><input type="checkbox" id="kVoted"> 2024 supporters who voted</label>
+            <label><input type="checkbox" id="kNow"> Supporters found this election <small>(canvass export)</small></label>
+            <label><input type="checkbox" id="kT1"> T1 list, not voted yet</label>
+            <label><input type="checkbox" id="kT2"> T2 households</label>
+            <label class="sub"><input type="checkbox" id="kReg" checked> Only people still on the voters list <small>(skips people who seem to have moved)</small></label>
+            <label class="sub"><input type="checkbox" id="kCast" checked> Leave out people who have voted <small>(participation report)</small></label>
+          </fieldset>
+          <div class="two">
+            <label class="field"><span>Doors per route</span><span class="inline"><input type="number" id="perRoute" min="10" max="200" step="5" value="30"><small>at most</small></span></label>
+            <label class="field"><span>Longest walk per route</span><select id="maxWalk"><option value="1000">1 km</option><option value="1500" selected>1.5 km</option><option value="2000">2 km</option><option value="0">No limit</option></select></label>
+          </div>
+          <p class="note">Routes are compact blocks of streets. Where doors are far apart, a route gets fewer doors rather than a longer walk.</p>
+          <button type="submit" class="btn primary">Plan routes</button>
+        </form>
+        <div id="routeOut" aria-live="polite"></div>
+        <section class="book" aria-labelledby="bookTitle">
+          <h2 id="bookTitle">Route book for the check-in desk</h2>
+          <p class="note">Plans every area at once with the choices above: the GOTV priority polls, then each other poll by focus rank. Each route gets a code (P1-03 is GOTV group 1, route 3) that the packets and the check-in desk share.</p>
+          <button type="button" class="btn" id="buildBook">Build the route book</button>
+          <div id="bookOut" aria-live="polite"></div>
+        </section>
+      </section>
+      <section class="pane" id="pane-voted" role="tabpanel" aria-labelledby="tab-voted" hidden></section>
+    </div>
+  </aside>
+  <div class="mapwrap">
+    <div id="map" role="region" aria-label="Poll map"></div>
+    <div class="legend" id="legend" aria-live="polite"></div>
+  </div>
+</div>
+<div id="print" class="print-only"></div>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="data/public.js"></script>
+<script src="data/campaign.enc.js"></script>
+<script src="data/campaign.extra.enc.js"></script>
+<script src="desk-config.js"></script>
+<script src="core.js"></script>
+<script src="routes.js"></script>
+<script src="export.js"></script>
+<script src="polls.js"></script>
+</body>
+</html>
