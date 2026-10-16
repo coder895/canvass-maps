@@ -368,14 +368,24 @@ window.SCC = (() => {
     return { name: src.name, year, past: year > 0 && year <= 2024, asOf: (/(\d{4}-\d{2}-\d{2})/.exec(src.name) || [])[1] || '', src, people };
   }
   const regOf = key => P.registered[key] ?? P.registered[key.padStart(4, '0')] ?? 0;  // site-based polls are "064S" in the public data
-  // What the maps make of the two exports. The 2024 file gives the 2024 voted and didn't-vote lists; the current one gives the
-  // supporters found this election by house (in the shape parseInteractions() returns) and by poll (in place of a Poll Summary,
-  // which also had the share with no answer yet: that stays null). Both give the voters file and who lives at each house.
+  // What the maps make of the two exports. Both files say whether each person voted in 2024, so together they give the voted and
+  // didn't-vote lists: everyone on either, once, at their current address, marked by whether they're on the 2024 supporter list
+  // (on24), which is what "2024 supporters" counts. The current file gives the supporters found this election by house (in the shape
+  // parseInteractions() returns) and by poll (in place of a Poll Summary, which also had the share with no answer yet: that stays
+  // null). Both give the voters file and who lives at each house.
   function fromFull(past, now) {
     const out = {};
-    if (past) {
-      const list = kind => ({ kind, name: past.name, people: past.people.filter(x => x.voted24 === (kind === 'voted'))
-        .map(x => ({ poll: x.poll, street: x.street, phone: x.phones.length > 0, reg: null })) });
+    // one entry per person (by ID), the current export's details first
+    const byId = new Map();
+    for (const f of [past, now]) for (const x of f?.people || []) {
+      const was = byId.get(x.id);
+      byId.set(x.id, { ...was, ...x, phones: x.phones.length ? x.phones : was?.phones || [], card: x.card || was?.card || '',
+        on24: !!was?.on24 || f === past, voted24: was?.voted24 ?? x.voted24, now: f === now ? x.support : '' });
+    }
+    const people = [...byId.values()], record = people.filter(x => x.voted24 != null);
+    if (record.length) {
+      const list = kind => ({ kind, name: [past?.name, now?.name].filter(Boolean).join(' + '), people: record.filter(x => x.voted24 === (kind === 'voted'))
+        .map(x => ({ poll: x.poll, street: x.street, phone: x.phones.length > 0, reg: null, on24: x.on24 })) });
       out.lists = { voted: list('voted'), not: list('not') };
     }
     if (now) {
@@ -412,14 +422,6 @@ window.SCC = (() => {
       out.ps = { name: now.name, full: true, rows, asOf: now.asOf,
         totals: { reg: all.filter(r => r.reg > 0).reduce((t, r) => t + r.reg, 0), hh: sum('hh'), phones: sum('phones'), support: sum('support'), pop: sum('pop'), noAnswer: null, unknown: null } };
     }
-    // one entry per person (by ID), the current export's details first
-    const byId = new Map();
-    for (const f of [past, now]) for (const x of f?.people || []) {
-      const was = byId.get(x.id);
-      byId.set(x.id, { ...was, ...x, phones: x.phones.length ? x.phones : was?.phones || [], card: x.card || was?.card || '',
-        on24: !!was?.on24 || f === past, voted24: f === past ? x.voted24 : was?.voted24 ?? null, now: f === now ? x.support : '' });
-    }
-    const people = [...byId.values()];
     const cards = people.filter(x => x.card && x.street);
     if (cards.length) out.voterNos = { name: [past?.name, now?.name].filter(Boolean).join(' + '), src: null, at: new Map(cards.map(x => [x.card, x.street])),
       people: cards.map(x => [x.card, x.street, x.last, x.first]) };

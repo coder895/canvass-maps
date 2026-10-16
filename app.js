@@ -44,7 +44,7 @@
     unknown: { color: 'ramp-contact', breaks: [0.5, 0.7, 0.85, 0.95], alpha: ALPHA5, get: r => r.unknown, label: v => pct(v), quantile: 0.01,
       title: 'People with no support answer yet', note: 'From the Poll Summary’s “unknown” share. Darker means more people still to reach.' },
     skipped: { color: 'ramp-gotv', breaks: [10, 25, 50, 100], alpha: ALPHA5, get: r => r.not, label: v => fmt(v), quantile: 5, src: 'turnout',
-      title: 'Supporters who didn’t vote in 2024', note: 'From the 2024 supporter lists. Darker means more people to remind to vote.' },
+      title: 'Supporters who didn’t vote in 2024', note: 'From the supporters’ 2024 voting record. Darker means more people to remind to vote.' },
     cast: { color: 'cast', breaks: [0.02, 0.05, 0.1, 0.2, 0.3], alpha: [0.06, 0.16, 0.28, 0.42, 0.56, 0.70], get: r => r.share, label: v => pct(v), src: 'cast',
       title: 'Voted so far, as a share of registered voters', note: 'From the Elections BC participation report, by the voting area it gives each voter.' },
   };
@@ -256,7 +256,7 @@
   function houseCard(s) {
     const line = (k, label, n) => `<li><i class="dot" style="${dot(k)}"></i><span>${label}</span><b class="num">${n}</b></li>`;
     const lines = [];
-    const now = (s.n.con || 0) + (s.n.lean || 0), listed = s.voted + s.notVoted, opp = (s.n.ndp || 0) + (s.n.ndp_lean || 0);
+    const now = (s.n.con || 0) + (s.n.lean || 0), listed = s.on24, opp = (s.n.ndp || 0) + (s.n.ndp_lean || 0);
     if (s.cast) lines.push(line(s.castOurs ? 'cast' : 'castOther', 'Voted so far (participation report)', s.cast));
     if (s.castOurs) {
       const u = [...s.castUnits].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
@@ -302,7 +302,7 @@
     const sites = new Map();
     const get = (key, civic) => {
       let s = sites.get(key);
-      if (!s) sites.set(key, s = { key, civic, polls: {}, n: {}, units: new Map(), ls: 0, last: '', voted: 0, notVoted: 0, phoneNV: 0, vUnits: new Map(), cast: 0, castOurs: 0, castUnits: new Set() });
+      if (!s) sites.set(key, s = { key, civic, polls: {}, n: {}, units: new Map(), ls: 0, last: '', voted: 0, notVoted: 0, on24: 0, phoneNV: 0, vUnits: new Map(), cast: 0, castOurs: 0, castUnits: new Set() });
       return s;
     };
     for (const seed of S.ix ? S.ix.seeds : []) {
@@ -321,6 +321,7 @@
         if (!s.fromIx && !NO_POLL.has(person.poll)) s.polls[person.poll] = (s.polls[person.poll] || 0) + 1;
         const u = s.vUnits.get(a.unit) || { voted: 0, not: 0 };
         s.vUnits.set(a.unit, u);
+        if (person.on24 !== false) s.on24++;  // lists from the Full exports also carry supporters who weren't on the 2024 list
         if (list.kind === 'voted') { s.voted++; u.voted++; } else { s.notVoted++; u.not++; if (person.phone) s.phoneNV++; }
       }
     }
@@ -459,7 +460,7 @@
     const ps = S.ps, ix = S.ix, tv = S.turnout;
     const cast = S.cast;
     const loaded = [ps && `${ps.full ? 'supporters this election' : 'poll summary'}${ps.asOf ? ` (${day(ps.asOf)})` : ''}`, ix && !ix.full && `canvass ${day(ix.earliest)} – ${day(ix.latest)}`,
-      tv && '2024 voting lists',
+      tv && '2024 voting record',
       cast && `participation report${cast.names.length > 1 ? `s (${cast.names.length})` : ''}${cast.asOf ? ` to ${stamp(cast.asOf)}` : ''}`].filter(Boolean);
     $('loader').classList.toggle('done', loaded.length > 0);
     $('loaded').hidden = !loaded.length;
@@ -482,7 +483,7 @@
       h += '<h2>This election</h2>';
       if (ps) {
         h += `<div class="goal"><p class="hero"><b>${fmt(ps.totals.support)}</b> supporters found</p>
-          <p>${ps.full ? 'Supporters identified this election, from the supporter export' : 'The Poll Summary’s current support count'}${ps.asOf ? ` of ${day(ps.asOf)}` : ''}. For scale, the NDP won with ${fmt(total.ndp)} votes in 2024${tv ? `, and only ${pct(tv.voted / (tv.voted + tv.not))} of the supporters on the 2024 lists voted` : ''}.</p></div>`;
+          <p>${ps.full ? 'Supporters identified this election, from the supporter export' : 'The Poll Summary’s current support count'}${ps.asOf ? ` of ${day(ps.asOf)}` : ''}. For scale, the NDP won with ${fmt(total.ndp)} votes in 2024${tv ? `, and only ${pct(tv.voted / (tv.voted + tv.not))} of our supporters voted in 2024` : ''}.</p></div>`;
       }
       h += '<div class="kpis">';
       if (ps && ps.totals.unknown != null) h += `<div class="kpi"><b>${fmt(ps.totals.pop - ps.totals.noAnswer)}</b><span>people have given a support answer (${pct(1 - ps.totals.unknown)} of the ${fmt(ps.totals.pop)} on file)</span></div>`;
@@ -541,7 +542,7 @@
     const notes = ['<b>2024</b> is the result at the poll’s 2024 voting place.'];
     if (S.ps?.full) notes.push('<b>Supporters</b> are the supporters identified this election, from the supporter export.');
     else if (S.ps) notes.push('<b>Supporters</b> and <b>No answer</b> (share of people on file with no support answer) come from the Poll Summary.');
-    if (S.turnout) notes.push('<b>Didn’t vote ’24</b> counts supporters on the 2024 didn’t-vote list.');
+    if (S.turnout) notes.push('<b>Didn’t vote ’24</b> counts supporters who didn’t vote in 2024.');
     if (S.cast) notes.push('<b>Voted</b> counts everyone in the participation report so far.');
     notes.push('Click a column to sort, or a poll to see it on the map.');
     $('pollsNote').innerHTML = notes.join(' ');
@@ -598,7 +599,7 @@
       ${out.length ? `<details><summary>Outside the boundary</summary>${list(out, s => `poll ${esc(s.poll)}`, 'out')}</details>` : ''}
       ${moved.length ? `<details><summary>Poll differs from the map</summary>${list(moved, s => `poll ${esc(s.poll)} → ${vaName(s.va)}`, 'moved')}</details>` : ''}
       ${missing.length ? `<details><summary>Not found</summary>${list(missing, s => `poll ${esc(s.poll)}`)}</details>` : ''}
-      ${S.turnout?.unplaced ? `<p class="note">${fmt(S.turnout.unplaced)} people on the 2024 lists have no usable address (blank or “N/A”).</p>` : ''}`;
+      ${S.turnout?.unplaced ? `<p class="note">${fmt(S.turnout.unplaced)} people on the supporter lists have no usable address (blank or “N/A”).</p>` : ''}`;
     S.checkLists = { out, moved };
   }
   $('check').addEventListener('click', e => { const b = e.target.closest('button[data-list]'); if (b) showHouse(S.checkLists[b.dataset.list][+b.dataset.i]); });

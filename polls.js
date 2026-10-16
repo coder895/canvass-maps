@@ -71,7 +71,7 @@
   const routeLayer = L.layerGroup().addTo(map);
 
   // ------------------------------------------------------------------ per-poll numbers
-  // 2024 supporters per poll: people on the voted and didn't-vote lists. A person listed without a poll (999) takes the poll
+  // Per poll: supporters who voted and didn't vote in 2024, and how many are on the 2024 supporter list. A person listed without a poll (999) takes the poll
   // their address falls in, as on the campaign map.
   function tally() {
     const by = new Map(), where = new Map();
@@ -88,13 +88,14 @@
           key = String(va);
           mapped++;
         }
-        const t = by.get(key) || { voted: 0, not: 0, notPhone: 0 };
+        const t = by.get(key) || { voted: 0, not: 0, notPhone: 0, on24: 0 };
         by.set(key, t);
+        if (person.on24 !== false) t.on24++;  // lists from the Full exports also carry supporters who weren't on the 2024 list
         if (list.kind === 'voted') t.voted++; else { t.not++; if (person.phone) t.notPhone++; }
       }
     }
-    const count = k => (S.lists?.[k]?.people.length) || 0;
-    return { by, people, mapped, noPoll, voted: count('voted'), not: count('not') };
+    const count = k => (S.lists?.[k]?.people.length) || 0, on24 = [S.lists?.voted, S.lists?.not].reduce((n, l) => n + (l?.people.filter(x => x.on24 !== false).length || 0), 0);
+    return { by, people, on24, mapped, noPoll, voted: count('voted'), not: count('not') };
   }
   function buildRows() {
     S.t = S.lists ? tally() : null;
@@ -125,7 +126,7 @@
       if (!p && !(ps?.reg) && !t1by.has(key) && !castBy.has(key)) continue;  // site-based polls (care homes) without voters
       S.rows.set(key, { key, label: p ? String(p.code) : key, sortCode: p ? p.code : parseInt(key, 10) + 0.5, p, place: p?.place, reg: ps?.reg || p?.reg2024 || 0,
         now: ps ? ps.support : null, supHh: ps?.supHh ?? null, unknown: ps ? ps.unknown : null, pop: ps?.pop ?? null, phones: ps?.phones ?? null,
-        streets: ps?.streets || [], y24: S.t ? (y ? y.voted + y.not : 0) : null, voted: y?.voted || 0, not: y?.not || 0, notPhone: y?.notPhone || 0,
+        streets: ps?.streets || [], y24: S.t ? (y ? y.on24 : 0) : null, voted: y?.voted || 0, not: y?.not || 0, notPhone: y?.notPhone || 0,
         plan: planOf.get(key) || null, t1: S.t1 ? (t1by.get(key) || { n: 0, voted: 0, known: 0, fresh: 0 }) : null,
         cast: S.cast ? (castBy.get(key) || { n: 0, ours: 0 }) : null });
     }
@@ -319,7 +320,7 @@
     } else if (r.now != null) out.push(`${fmt(r.now)} supporters found so far.`);
     else if (r.y24 != null) out.push(`${fmt(r.y24)} supporters on the 2024 lists.`);
     if (r.unknown != null) out.push(`${pct(r.unknown)} of the people on file haven’t given a support answer yet.`);
-    if (r.not) out.push(`${fmt(r.not)} of the 2024 supporters didn’t vote in 2024${r.notPhone ? ` (${fmt(r.notPhone)} with a phone)` : ''}.`);
+    if (r.not) out.push(`${fmt(r.not)} supporters didn’t vote in 2024${r.notPhone ? ` (${fmt(r.notPhone)} with a phone)` : ''}.`);
     return out.join(' ');
   }
 
@@ -335,13 +336,13 @@
     { k: 'now', label: 'Supporters now', sub: 'Supporters identified this election', color: 'con', breaks: COUNT_BREAKS, alpha: ALPHA6, get: r => r.now,
       edges: countEdges, needs: () => !!S.ps, note: 'Same scale as “2024 supporters”, so switching between the two compares them.' },
     { k: 'y24', label: '2024 supporters', sub: 'People on the 2024 supporter lists', color: 'y24', breaks: COUNT_BREAKS, alpha: ALPHA6, get: r => r.y24,
-      edges: countEdges, needs: () => !!S.t, note: 'Voted and didn’t-vote lists together. Same scale as “Supporters now”.' },
+      edges: countEdges, needs: () => !!S.t, note: 'Everyone on the 2024 supporter list. Same scale as “Supporters now”.' },
     { k: 'ratio', label: 'Now compared with 2024', sub: 'Supporters now as a share of 2024', color: 'ramp-find', breaks: [0.25, 0.5, 0.75, 1], alpha: ALPHA5,
       get: r => both(r) && r.y24 >= 10 ? r.now / r.y24 : null, edges: pctEdges, needs: () => !!(S.ps && S.t),
       note: 'Darker is closer to (or past) the 2024 count. Uncoloured polls had fewer than 10 supporters on the 2024 lists.' },
     { k: 'focus', label: 'Focus score', sub: 'Where door knocking can add the most votes', color: 'sign', breaks: [25, 50, 100, 150, 200], alpha: ALPHA6,
       get: r => S.focus.get(r.key)?.score ?? null, edges: countEdges, needs: () => S.focus.size > 0,
-      note: 'Registered 2024 supporters who didn’t vote, plus half the supporters found now. The Focus tab ranks the polls.' },
+      note: 'Supporters who didn’t vote in 2024, plus half the supporters found now. The Focus tab ranks the polls.' },
     { k: 't1', label: 'T1 list', sub: 'People on the T1 list in each poll', color: 't1', breaks: [10, 25, 50, 75, 100], alpha: ALPHA6,
       get: r => r.t1 ? r.t1.n : null, edges: countEdges, needs: () => !!S.t1, note: 'Counted by the poll the T1 list gives each person.' },
     { k: 't2', label: 'T2 households', sub: 'Knocked, called, said yes, didn’t vote in 2024', color: 't2', breaks: [1, 3, 5, 8, 12], alpha: ALPHA6,
@@ -471,7 +472,7 @@
       <p class="meta">Poll ${esc(d.poll)}${d.approx ? ' · location estimated' : ''}</p><p class="meta">${contactLine(d)}</p>${castPart(d)}${t1Part(d)}
       ${lines ? `<ul class="calls">${lines}</ul>` : ''}
       ${d.dnc ? '<p class="flag">Someone here asked us to stop contacting them. This address is left off every route.</p>' : ''}
-      ${d.not || d.voted || d.now ? `<p class="meta">${[d.now && `${d.now} supporter${d.now > 1 ? 's' : ''} this election`, d.not && `${d.not} on the 2024 didn’t-vote list`, d.voted && `${d.voted} on the 2024 voted list`].filter(Boolean).join(', ')}.</p>` : ''}
+      ${d.not || d.voted || d.now ? `<p class="meta">${[d.now && `${d.now} supporter${d.now > 1 ? 's' : ''} this election`, d.not && `${d.not} didn’t vote in 2024`, d.voted && `${d.voted} voted in 2024`].filter(Boolean).join(', ')}.</p>` : ''}
       ${who ? `<h4>Who lives here</h4>${who}` : units.length ? `<p class="meta units">Units: ${units.slice(0, 40).map(u => `<span>${esc(u)}</span>`).join('')}</p>` : ''}</div>`).openOn(map);
   }
   const planPlaces = () => (S.plan?.places || []).map(pl => ({ ...pl, hit: locate(pl.address) })).filter(pl => pl.hit);
@@ -655,7 +656,8 @@
     const cells = [];
     if (r.cast) cells.push(`<div><b><i class="k cast"></i>${fmt(r.cast.n)}</b><span>voted so far${r.reg ? ` (${pct(r.cast.n / r.reg, 1)} of ${fmt(r.reg)} registered)` : ''}${r.cast.ours ? `; ${fmt(r.cast.ours)} on our supporter lists` : ''}</span></div>`);
     if (r.now != null) cells.push(`<div><b><i class="k now"></i>${fmt(r.now)}</b><span>supporters now${r.supHh != null ? `, in ${fmt(r.supHh)} household${r.supHh === 1 ? '' : 's'}` : ''}</span></div>`);
-    if (r.y24 != null) cells.push(`<div><b><i class="k y24"></i>${fmt(r.y24)}</b><span>on the 2024 lists: ${fmt(r.voted)} voted, ${fmt(r.not)} didn’t</span></div>`);
+    if (r.y24 != null) cells.push(`<div><b><i class="k y24"></i>${fmt(r.y24)}</b><span>on the 2024 supporter list</span></div>`,
+      `<div><b>${fmt(r.not)}</b><span>supporters didn’t vote in 2024${r.notPhone ? `, ${fmt(r.notPhone)} with a phone` : ''} (${fmt(r.voted)} did)</span></div>`);
     if (r.unknown != null) cells.push(`<div><b>${pct(r.unknown)}</b><span>no support answer yet (of ${fmt(r.pop)} on file)</span></div>`);
     if (r.phones != null) cells.push(`<div><b>${fmt(r.phones)}</b><span>people with a phone number</span></div>`);
     const t1Voted = r.t1 ? r.t1.voted + (r.t1.cast || 0) : 0;
@@ -696,7 +698,8 @@
         h.push(`<div><b><i class="k cast"></i>${fmt(S.castPpl.length)}</b><span>voted so far</span><small>${fmt(ours)} on our supporter lists${S.cast.asOf ? ` · report of ${stamp(S.cast.asOf)}` : ''}</small></div>`);
       }
       if (ps) h.push(`<div><b><i class="k now"></i>${fmt(ps.totals.support)}</b><span>supporters now</span><small>${ps.full ? 'Supporter export' : 'Poll Summary'}${ps.asOf ? `, ${day(ps.asOf)}` : ''}</small></div>`);
-      if (t) h.push(`<div><b><i class="k y24"></i>${fmt(t.people)}</b><span>supporters on the 2024 lists</span><small>${fmt(t.voted)} voted in 2024, ${fmt(t.not)} didn’t</small></div>`);
+      if (t) h.push(`<div><b><i class="k y24"></i>${fmt(t.on24)}</b><span>supporters on the 2024 list</span><small>${t.on24 < t.people ? 'the 2024 supporter list' : `${fmt(t.voted)} voted in 2024, ${fmt(t.not)} didn’t`}</small></div>`);
+      if (t && t.on24 < t.people) h.push(`<div><b>${fmt(t.not)}</b><span>supporters didn’t vote in 2024</span><small>of ${fmt(t.people)} with a 2024 voting record; ${fmt(t.voted)} voted</small></div>`);
       if (S.t1) {
         const ppl = S.t1.people, known = ppl.filter(x => x.on).length, fresh = ppl.filter(x => x.on === 0).length, voted = ppl.filter(x => x.voted).length + S.t1Cast;
         h.push(`<div><b><i class="k t1"></i>${fmt(ppl.length)}</b><span>on the T1 list</span><small>${known + fresh ? `${fmt(known)} already on our lists, ${fmt(fresh)} new` : 'Loaded in this browser: no overlap check'}${voted ? ` · ${fmt(voted)} voted` : ''}</small></div>`);
@@ -737,13 +740,13 @@
     { k: 'code', label: 'Poll', get: r => r.sortCode, show: r => `${esc(r.label)}${r.plan ? ' <span class="g-plan" title="GOTV priority">★</span>' : ''}` },
     { k: 'score', label: 'Focus', get: r => r.f.score, show: r => fmt(r.f.score), r: true, title: 'Focus score' },
     { k: 'skipped', label: 'No vote ’24', get: r => r.f.skipped, show: r => `${fmt(r.f.skipped)}${r.f.unchecked ? '*' : ''}`, r: true, when: () => !!S.t,
-      title: '2024 supporters still on the voters list who didn’t vote in 2024' },
+      title: 'Supporters who didn’t vote in 2024' },
     { k: 'now', label: 'Now', get: r => r.now ?? -1, show: r => r.now == null ? '—' : fmt(r.now), r: true, when: () => !!S.ps, title: 'Supporters identified this election' },
     { k: 'cast', label: 'Voted', get: r => r.cast?.n ?? -1, show: r => r.cast ? fmt(r.cast.n) : '—', r: true, when: () => !!S.cast, title: 'Voted so far (participation report)' },
     { k: 't1', label: 'T1', get: r => r.t1?.n ?? -1, show: r => r.t1 ? fmt(r.t1.n) : '—', r: true, when: () => !!S.t1, title: 'People on the T1 list' },
     { k: 't2', label: 'T2', get: r => r.calls?.t2 ?? -1, show: r => r.calls ? fmt(r.calls.t2) : '—', r: true, when: () => !!S.calls, title: 'T2 households: knocked, called, said yes, didn’t vote in 2024' },
-    { k: 'y24', label: '2024', get: r => r.y24 ?? -1, show: r => r.y24 == null ? '—' : fmt(r.y24), r: true, when: () => !!S.t, title: 'Everyone on the 2024 supporter lists' },
-    { k: 'doors', label: 'Doors', get: r => r.f.doors, show: r => fmt(r.f.doors), r: true, when: () => !!S.t, title: 'Doors with a 2024 supporter who didn’t vote' },
+    { k: 'y24', label: '2024', get: r => r.y24 ?? -1, show: r => r.y24 == null ? '—' : fmt(r.y24), r: true, when: () => !!S.t, title: 'Everyone on the 2024 supporter list' },
+    { k: 'doors', label: 'Doors', get: r => r.f.doors, show: r => fmt(r.f.doors), r: true, when: () => !!S.t, title: 'Doors with a supporter who didn’t vote in 2024' },
     { k: 'hours', label: 'Hours', get: r => r.f.hours, show: r => r.f.doors ? r.f.hours.toFixed(1) : '—', r: true, when: () => !!S.t, title: 'Estimated knocking time for those doors' },
   ];
   function renderTable() {
@@ -771,7 +774,7 @@
   function renderFocusNote(rows) {
     const h = [];
     if (!rows.length) { $('pollsNote').innerHTML = '<p class="note">Unlock the campaign data to rank the polls.</p>'; return; }
-    h.push(`<p class="note"><b>Focus score</b> = 2024 supporters still on the voters list who didn’t vote last time (1 each: the votes a knock can add)
+    h.push(`<p class="note"><b>Focus score</b> = supporters who didn’t vote in 2024 (1 each: the votes a knock can add)
       + supporters found this election (½ each: they need a reminder too, and some are the same people). <b>Doors</b> and <b>Hours</b>: knocking every door
       with a 2024 non-voter, walking at 4.5 km/h, about ${WALK.DOOR_MIN} minutes a door and a minute more for each extra unit in a building.</p>`);
     if (S.cast) h.push(`<p class="note">Our people the participation report shows have voted are left out of the score, doors and hours. Where a unit has
@@ -785,7 +788,7 @@
     }
     const unchecked = rows.filter(r => r.f.unchecked);
     if (unchecked.length) h.push(`<p class="note">* Nobody in poll${unchecked.length > 1 ? 's' : ''} ${unchecked.map(r => esc(r.label)).join(', ')} is in the voters-list file, so ${unchecked.length > 1 ? 'their' : 'its'} 2024 non-voters are counted without that check.</p>`);
-    const missing = [S.ps?.rows.get('999')?.support && `${fmt(S.ps.rows.get('999').support)} supporters now`, S.t?.noPoll && `${fmt(S.t.noPoll)} people on the 2024 lists`].filter(Boolean);
+    const missing = [S.ps?.rows.get('999')?.support && `${fmt(S.ps.rows.get('999').support)} supporters now`, S.t?.noPoll && `${fmt(S.t.noPoll)} people with a 2024 voting record`].filter(Boolean);
     if (missing.length) h.push(`<p class="note">${missing.join(' and ')} have no poll or a usable address, so they aren’t in this table. Click a column to sort, or a poll to open it.</p>`);
     $('pollsNote').innerHTML = h.join('');
   }
@@ -1013,7 +1016,7 @@
       const routes = WALK.plan(doorsIn(t), size, { maxLen });
       routes.forEach((rt, i) => list.push({ t, i, rt, of: routes.length, code: codeFor(t.id, i) }));
     }
-    const what = [o.not && '2024 supporters who didn’t vote', o.voted && '2024 supporters who voted', o.now && 'supporters found this election', o.t1 && 'the T1 list (not voted yet)', o.t2 && 'T2 households'].filter(Boolean).join(', ')
+    const what = [o.not && 'supporters who didn’t vote in 2024', o.voted && 'supporters who voted in 2024', o.now && 'supporters found this election', o.t1 && 'the T1 list (not voted yet)', o.t2 && 'T2 households'].filter(Boolean).join(', ')
       + (o.reg && S.hasReg ? ' (still on the voters list)' : '') + (o.cast ? ', leaving out people who have voted' : '');
     const group = t => S.plan?.groups.find(g => 'g' + g.rank === t.id);
     const streetsOf = rt => [...new Set(rt.doors.map(d => d.civic.replace(/^\d+\s+/, '')))];
